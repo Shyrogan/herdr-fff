@@ -1,7 +1,7 @@
 // herdr-fff: find a file with fff's fuzzy search, in the focused pane's
-// repository. Type to search, ↑/↓ (or ctrl+n/ctrl+p) to move, Enter to open,
-// Tab to switch between every file and the files git reports as changed,
-// Esc to close. Click a tab or a file to pick it.
+// repository. Type to search, Tab/Shift-Tab (or ↑/↓, ctrl+n/ctrl+p) to move,
+// Enter to open, ctrl+g to switch between every file and the files git
+// reports as changed, Esc to close. Click a tab or a file to pick it.
 //
 // Open it with `mod.open:herdr-fff` in keys.json, or from another mod with
 // openOverlay({ mod: "herdr-fff", props: { changed: true } }) to start on
@@ -179,7 +179,7 @@ export default class Finder extends View {
       .when(mark, (el) => el.child(div().flex_none().text_size(11).text_color(t[color] ?? t.dim).child(mark)));
   }
 
-  // Files · Changed: the two lists Tab switches between.
+  // Files · Changed: the two lists ctrl+g switches between.
   tabs(t) {
     const tab = (label, changed) =>
       div()
@@ -222,9 +222,10 @@ export default class Finder extends View {
       .on_key_down((e, cx) => {
         const ctrl = e.modifiers.control;
         if (e.key === "escape") return this.close();
-        if (e.key === "down" || (ctrl && (e.key === "n" || e.key === "j"))) this.move(1);
-        else if (e.key === "up" || (ctrl && (e.key === "p" || e.key === "k"))) this.move(-1);
-        else if (e.key === "tab") {
+        const back = e.key === "tab" && e.modifiers.shift;
+        if (back || e.key === "up" || (ctrl && (e.key === "p" || e.key === "k"))) this.move(-1);
+        else if (e.key === "tab" || e.key === "down" || (ctrl && (e.key === "n" || e.key === "j"))) this.move(1);
+        else if (ctrl && e.key === "g") {
           this.changed = !this.changed;
           this.schedule(cx);
         } else return;

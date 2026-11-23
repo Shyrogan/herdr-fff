@@ -2,7 +2,7 @@
 
 Find files in the [Herdr](https://herdr.dev) desktop app with [fff](https://github.com/dmtrKovalenko/fff), the search engine behind fff.nvim.
 
-One key opens a picker over the window. It searches the repository of the focused pane: type a few letters of a path, and the best matches come first, ranked by fff's fuzzy matching and by how often you open each file. `Tab` switches to the files git reports as changed (modified, added or untracked). `Enter` opens the file in the tab's nvim.
+One key opens a picker over the window. It searches the repository of the focused pane: type a few letters of a path, and the best matches come first, ranked by fff's fuzzy matching and by how often you open each file. `Ctrl-g` switches to the files git reports as changed (modified, added or untracked). `Enter` opens the file in the tab's nvim.
 
 ## How it works
 
@@ -67,9 +67,9 @@ openOverlay({ mod: "herdr-fff", props: { changed: true } });
 | Key | Does |
 | --- | --- |
 | type | search the repository |
-| `↑` `↓`, `ctrl-n` `ctrl-p` | move |
+| `Tab` `Shift-Tab`, `↑` `↓`, `ctrl-n` `ctrl-p` | move |
 | `Enter` | open the file |
-| `Tab` | switch between all files and changed files |
+| `Ctrl-g` | switch between all files and changed files |
 | `Esc` | close |
 
 fff's query syntax works too: `git:modified`, `src/`, `!test/`, or globs like `**/*.rs`.

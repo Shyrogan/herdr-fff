@@ -1,7 +1,7 @@
 // herdr-fff: find a file with fff's fuzzy search, in the focused pane's
 // repository. Type to search, ↑/↓ (or ctrl+n/ctrl+p) to move, Enter to open,
 // Tab to switch between every file and the files git reports as changed,
-// Esc to close.
+// Esc to close. Click a tab or a file to pick it.
 //
 // Open it with `mod.open:herdr-fff` in keys.json, or from another mod with
 // openOverlay({ mod: "herdr-fff", props: { changed: true } }) to start on
@@ -13,12 +13,12 @@
 // Enter opens the file in the tab's nvim with herdr-nvim when it is
 // installed, else in nvim in a new pane on the right.
 
-import { View, div } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { appHome, exec, focused, home, props, closeOverlay, run, notify, theme } from "herdr";
 
-const ROWS = 14;
-const ROW_HEIGHT = 30;
+const ROWS = 12;
+const ROW_HEIGHT = 32;
 // How long typing pauses before a search runs.
 const DEBOUNCE_MS = 30;
 // How often the results are asked for again while the first scan runs.
@@ -132,59 +132,97 @@ export default class Finder extends View {
     run("terminal.open", { argv: ["nvim", file], folder: this.results.root, place: "right" });
   }
 
-  row(t, hit, on) {
-    const [mark, color] = STATUS[hit.status] ?? [" ", "dim"];
+  // Characters of `text` as runs that look the same, matched or not.
+  // `offset` is where `text` starts in the hit's path.
+  runs(text, offset, matched) {
+    const runs = [];
+    [...text].forEach((c, i) => {
+      const hit = matched.has(offset + i);
+      const last = runs[runs.length - 1];
+      if (last?.hit === hit) last.text += c;
+      else runs.push({ hit, text: c });
+    });
+    return runs;
+  }
+
+  // One match: the file name, its folder dimmed after it, its git status
+  // at the end. Matched characters are in the accent color.
+  row(t, hit, index, on) {
+    const [mark, color] = STATUS[hit.status] ?? [null, null];
     const chars = [...hit.path];
-    const nameAt = hit.path.lastIndexOf("/") + 1;
+    const slash = hit.path.lastIndexOf("/");
+    const nameAt = slash < 0 ? 0 : [...hit.path.slice(0, slash)].length + 1;
     const matched = new Set();
     for (const [s, e] of hit.highlights) for (let i = s; i < e; i++) matched.add(i);
-    // Runs of characters that look the same: folder or name, matched or not.
-    const runs = [];
-    chars.forEach((c, i) => {
-      const kind = `${i < nameAt ? "dir" : "name"}:${matched.has(i)}`;
-      const last = runs[runs.length - 1];
-      if (last?.kind === kind) last.text += c;
-      else runs.push({ kind, text: c });
-    });
+    const name = this.runs(chars.slice(nameAt).join(""), nameAt, matched);
+    const dir = nameAt ? this.runs(chars.slice(0, nameAt - 1).join(""), 0, matched) : [];
+    const part = (runs, base) =>
+      runs.map((r) => div().flex_none().text_color(r.hit ? t.accent : base).child(r.text));
     return h_flex()
+      .id(`fff-${index}`)
       .h(ROW_HEIGHT)
       .flex_none()
+      .mx(4)
       .px(10)
-      .gap(8)
+      .gap(10)
       .items_center()
       .rounded(7)
+      .cursor_pointer()
       .when(on, (el) => el.bg(t.hover))
-      .child(div().w(12).flex_none().font_family("monospace").text_color(t[color] ?? t.dim).child(mark))
-      .child(
-        h_flex().flex_1().min_w(0).overflow_hidden().children(
-          runs.map((r) => {
-            const [part, hit] = r.kind.split(":");
-            return div()
-              .flex_none()
-              .text_color(hit === "true" ? t.accent : part === "dir" ? t.dim : t.foreground)
-              .when(hit === "true" || part === "name", (d) => d.font_semibold())
-              .child(r.text);
-          }),
-        ),
-      );
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => {
+        this.selected = index;
+        this.open();
+      })
+      .child(h_flex().flex_none().font_semibold().children(part(name, t.foreground)))
+      .child(h_flex().flex_1().min_w(0).overflow_hidden().text_size(11.5).children(part(dir, t.dim)))
+      .when(mark, (el) => el.child(div().flex_none().text_size(11).font_semibold().text_color(t[color] ?? t.dim).child(mark)));
+  }
+
+  // Files | Changed, the two lists Tab switches between.
+  tabs(t) {
+    const tab = (label, changed) =>
+      div()
+        .id(`fff-tab-${label}`)
+        .px(10)
+        .py(3)
+        .rounded(6)
+        .text_size(12)
+        .cursor_pointer()
+        .when(this.changed === changed, (d) => d.bg(t.hover).text_color(t.foreground).font_semibold())
+        .when(this.changed !== changed, (d) => d.text_color(t.dim).hover((s) => s.text_color(t.foreground)))
+        .on_click((_e, cx) => {
+          this.changed = changed;
+          this.schedule(cx);
+          cx.notify();
+        })
+        .child(label);
+    return h_flex().gap(2).child(tab("Files", false)).child(tab("Changed", true));
   }
 
   render() {
     const t = theme();
-    const hits = this.results?.hits ?? [];
+    const r = this.results;
+    const hits = r?.hits ?? [];
     // The window of rows around the selection.
     const first = Math.max(0, Math.min(this.selected - Math.floor(ROWS / 2), hits.length - ROWS));
     const shown = hits.slice(first, first + ROWS);
-    const status = this.results?.error
-      ? this.results.error
-      : this.results === null || this.results.ready === false
-        ? "indexing…"
-        : `${hits.length}${hits.length === 100 ? "+" : ""} files`;
+    const repo = (r?.root ?? this.dir).split("/").filter(Boolean).pop() ?? "/";
+    const count = r && !r.error && r.ready !== false && hits.length
+      ? `${hits.length}${hits.length === 100 ? "+" : ""}`
+      : "";
+    // What the list says when it has no rows.
+    const empty = r?.error
+      ? r.error
+      : r === null || r.ready === false
+        ? "Indexing…"
+        : this.changed
+          ? this.query ? "No changed file matches" : `No changes in ${repo}`
+          : "No file matches";
 
     return v_flex()
       .id("herdr-fff")
-      .size_full()
-      .min_h(0)
+      .w_full()
       .p(14)
       .gap(10)
       .bg(t.popover)
@@ -204,24 +242,31 @@ export default class Finder extends View {
       .child(
         h_flex()
           .items_center()
-          .gap(8)
-          .child(div().text_size(15).font_semibold().text_color(t.foreground).child(this.changed ? "Changed files" : "Files"))
-          .child(div().flex_1().truncate().text_size(11).text_color(t.dim).child(this.results?.root ?? this.dir))
-          .child(div().text_size(11).text_color(this.results?.error ? t.ansi1 : t.dim).child(status)),
+          .gap(10)
+          .child(this.tabs(t))
+          .child(div().flex_1())
+          .child(div().text_size(11).text_color(t.dim).child(count ? `${repo} · ${count}` : repo))
+          .child(div().text_size(11).text_color(t.dim).child("Esc")),
       )
       .child(
         h_flex()
           .h(36)
           .flex_none()
           .px(10)
+          .gap(8)
           .items_center()
           .rounded(9)
           .border_1()
           .border_color(t.accent)
           .bg(t.background)
+          .child(svg("mods/workspace-chrome/search.svg").size(15).text_color(t.dim))
           .child(Input.new(this.input).flex_1().h_full().text_size(12.8).text_color(t.foreground)),
       )
-      .child(v_flex().flex_1().min_h(0).children(shown.map((hit, i) => this.row(t, hit, first + i === this.selected))))
-      .child(div().text_size(11).text_color(t.dim).child("⏎ open   ↑↓ move   ⇥ files / changed   esc close"));
+      .child(
+        shown.length
+          ? v_flex().children(shown.map((hit, i) => this.row(t, hit, first + i, first + i === this.selected)))
+          : div().h(ROW_HEIGHT * 2).flex().items_center().justify_center().text_size(12)
+              .text_color(r?.error ? t.ansi1 : t.dim).child(empty),
+      );
   }
 }

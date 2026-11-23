@@ -18,7 +18,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { appHome, exec, focused, home, props, closeOverlay, run, notify, theme } from "herdr";
 
 const ROWS = 12;
-const ROW_HEIGHT = 32;
+const ROW_HEIGHT = 28;
 // How long typing pauses before a search runs.
 const DEBOUNCE_MS = 30;
 // How often the results are asked for again while the first scan runs.
@@ -48,11 +48,11 @@ async function search(dir, query, changed) {
 }
 
 const STATUS = {
-  untracked: ["?", "ansi2"],
+  untracked: ["U", "ansi2"],
   staged_new: ["A", "ansi2"],
-  modified: ["M", "ansi3"],
-  staged_modified: ["M", "ansi3"],
-  renamed: ["R", "ansi3"],
+  modified: ["M", "blocked"],
+  staged_modified: ["M", "blocked"],
+  renamed: ["R", "blocked"],
   deleted: ["D", "ansi1"],
   staged_deleted: ["D", "ansi1"],
   ignored: ["!", "dim"],
@@ -144,9 +144,9 @@ export default class Finder extends View {
     });
     return runs;
   }
-
-  // One match: the file name, its folder dimmed after it, its git status
-  // at the end. Matched characters are in the accent color.
+  // One match, as a row of herdr's Files panel: a file icon, the file name,
+  // its folder dimmed after it, its git status at the end. Matched
+  // characters are in the accent color.
   row(t, hit, index, on) {
     const [mark, color] = STATUS[hit.status] ?? [null, null];
     const chars = [...hit.path];
@@ -162,9 +162,8 @@ export default class Finder extends View {
       .id(`fff-${index}`)
       .h(ROW_HEIGHT)
       .flex_none()
-      .mx(4)
-      .px(10)
-      .gap(10)
+      .px(8)
+      .gap(7)
       .items_center()
       .rounded(7)
       .cursor_pointer()
@@ -174,30 +173,28 @@ export default class Finder extends View {
         this.selected = index;
         this.open();
       })
-      .child(h_flex().flex_none().font_semibold().children(part(name, t.foreground)))
-      .child(h_flex().flex_1().min_w(0).overflow_hidden().text_size(11.5).children(part(dir, t.dim)))
-      .when(mark, (el) => el.child(div().flex_none().text_size(11).font_semibold().text_color(t[color] ?? t.dim).child(mark)));
+      .child(svg("mods/files/file.svg").size(14).flex_none().text_color(t.muted))
+      .child(h_flex().flex_none().children(part(name, t.foreground)))
+      .child(h_flex().flex_1().min_w(0).overflow_hidden().text_size(12).children(part(dir, t.dim)))
+      .when(mark, (el) => el.child(div().flex_none().text_size(11).text_color(t[color] ?? t.dim).child(mark)));
   }
 
-  // Files | Changed, the two lists Tab switches between.
+  // Files · Changed: the two lists Tab switches between.
   tabs(t) {
     const tab = (label, changed) =>
       div()
         .id(`fff-tab-${label}`)
-        .px(10)
-        .py(3)
-        .rounded(6)
         .text_size(12)
         .cursor_pointer()
-        .when(this.changed === changed, (d) => d.bg(t.hover).text_color(t.foreground).font_semibold())
-        .when(this.changed !== changed, (d) => d.text_color(t.dim).hover((s) => s.text_color(t.foreground)))
+        .text_color(this.changed === changed ? t.foreground : t.dim)
+        .hover((s) => s.text_color(t.foreground))
         .on_click((_e, cx) => {
           this.changed = changed;
           this.schedule(cx);
           cx.notify();
         })
         .child(label);
-    return h_flex().gap(2).child(tab("Files", false)).child(tab("Changed", true));
+    return h_flex().flex_none().gap(10).child(tab("Files", false)).child(tab("Changed", true));
   }
 
   render() {
@@ -208,9 +205,6 @@ export default class Finder extends View {
     const first = Math.max(0, Math.min(this.selected - Math.floor(ROWS / 2), hits.length - ROWS));
     const shown = hits.slice(first, first + ROWS);
     const repo = (r?.root ?? this.dir).split("/").filter(Boolean).pop() ?? "/";
-    const count = r && !r.error && r.ready !== false && hits.length
-      ? `${hits.length}${hits.length === 100 ? "+" : ""}`
-      : "";
     // What the list says when it has no rows.
     const empty = r?.error
       ? r.error
@@ -223,10 +217,8 @@ export default class Finder extends View {
     return v_flex()
       .id("herdr-fff")
       .w_full()
-      .p(14)
-      .gap(10)
-      .bg(t.popover)
       .text_size(13)
+      .text_color(t.foreground)
       .on_key_down((e, cx) => {
         const ctrl = e.modifiers.control;
         if (e.key === "escape") return this.close();
@@ -239,34 +231,40 @@ export default class Finder extends View {
         cx.stop_propagation();
         cx.notify();
       })
+      // The search field is the header, as the Files panel's title bar.
       .child(
         h_flex()
-          .items_center()
-          .gap(10)
-          .child(this.tabs(t))
-          .child(div().flex_1())
-          .child(div().text_size(11).text_color(t.dim).child(count ? `${repo} · ${count}` : repo))
-          .child(div().text_size(11).text_color(t.dim).child("Esc")),
-      )
-      .child(
-        h_flex()
-          .h(36)
+          .h(42)
           .flex_none()
-          .px(10)
+          .px(14)
           .gap(8)
           .items_center()
-          .rounded(9)
-          .border_1()
-          .border_color(t.accent)
-          .bg(t.background)
-          .child(svg("mods/workspace-chrome/search.svg").size(15).text_color(t.dim))
-          .child(Input.new(this.input).flex_1().h_full().text_size(12.8).text_color(t.foreground)),
+          .border_b(1)
+          .border_color(t.border)
+          .child(svg("mods/workspace-chrome/search.svg").size(14).flex_none().text_color(t.muted))
+          .child(Input.new(this.input).flex_1().h_full().text_size(13).text_color(t.foreground))
+          .child(this.tabs(t)),
       )
       .child(
-        shown.length
-          ? v_flex().children(shown.map((hit, i) => this.row(t, hit, first + i, first + i === this.selected)))
-          : div().h(ROW_HEIGHT * 2).flex().items_center().justify_center().text_size(12)
-              .text_color(r?.error ? t.ansi1 : t.dim).child(empty),
+        v_flex()
+          .p(6)
+          .when(shown.length > 0, (el) => el.children(shown.map((hit, i) => this.row(t, hit, first + i, first + i === this.selected))))
+          .when(!shown.length, (el) =>
+            el.child(div().p(8).text_size(12).text_color(r?.error ? t.ansi1 : t.dim).child(empty))),
+      )
+      .child(
+        h_flex()
+          .h(28)
+          .flex_none()
+          .px(14)
+          .gap(8)
+          .items_center()
+          .border_t(1)
+          .border_color(t.border)
+          .text_size(11)
+          .text_color(t.dim)
+          .child(div().flex_1().min_w(0).truncate().child(repo))
+          .when(hits.length > 0, (el) => el.child(`${hits.length}${hits.length === 100 ? "+" : ""} matches`)),
       );
   }
 }
